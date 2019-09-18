@@ -5,21 +5,21 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.Uri.Query
 import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpMethods, HttpRequest, HttpResponse, ResponseEntity, StatusCode, StatusCodes, Uri}
 import akka.stream.ActorMaterializer
-import lowlevelserver.GuitarDB.{AddInventory, AddedInventory, CreateGuitar, FetchInventory, FindAllGuitars, FindGuitar, GuitarCreated}
+import lowlevelserver.GuitarDB.{AddInventory, CreateGuitar, FetchInventory, FindAllGuitars, FindGuitar, GuitarCreated}
 import spray.json._
 import akka.pattern.ask
 import akka.util.Timeout
 
 import scala.concurrent.Future
 
-case class Guitar(make: String, model: String)
+case class Guitar(make: String, model: String, quantity: Int = 0)
 
 class GuitarDB extends Actor with ActorLogging {
 
   import GuitarDB._
 
   var guitars = Map[Int, Guitar]()
-  var inventoryMap = Map[Int, Int]()
+  //var inventoryMap = Map[Int, Int]()
   var currentGuitarId: Int = 0
 
   override def receive: Receive = {
@@ -32,18 +32,21 @@ class GuitarDB extends Actor with ActorLogging {
     case CreateGuitar(guitar) =>
       log.info(s"Adding guitar: $guitar with id: $currentGuitarId")
       guitars = guitars + (currentGuitarId -> guitar)
-      inventoryMap = inventoryMap + (currentGuitarId -> 0)
       sender ! GuitarCreated(currentGuitarId)
       currentGuitarId += 1
     case inventory: AddInventory =>
       log.info(s"Add inventory id: ${inventory.id}, quantity: ${inventory.quantity}")
-      inventoryMap.get(inventory.id).foreach{ q =>
-        inventoryMap += inventory.id -> (q + inventory.quantity)
-      }
-      sender ! AddedInventory(inventoryMap.get(inventory.id))
+      val newGuitar = guitars.get(inventory.id)
+        .map(guitar => Guitar(guitar.make, guitar.model, guitar.quantity + inventory.quantity))
+      newGuitar.foreach(guitar => {
+        guitars += (inventory.id -> guitar)
+      })
+      sender ! newGuitar
     case FetchInventory(inStock) =>
       log.info(s"Fetch Inventory with inStock: $inStock")
-      sender ! guitars.filter(tuple => (inventoryMap.get(tuple._1).get != 0) == inStock).values.toList
+      sender ! guitars.filter{
+        case (id, guitar) => (guitar.quantity > 0) == inStock
+      }.values.toList
   }
 }
 
@@ -59,15 +62,13 @@ object GuitarDB {
 
   case class AddInventory(id: Int, quantity: Int)
 
-  case class AddedInventory(quantity: Option[Int])
-
   case class FetchInventory(inStock: Boolean)
 
 }
 
 trait GuitarStoreJsonProtocol extends DefaultJsonProtocol {
   // jsonFormat2 because of the number of parameters in Guitar
-  implicit val guitarFormat = jsonFormat2(Guitar)
+  implicit val guitarFormat = jsonFormat3(Guitar)
 }
 
 object LowLevelRest extends App with GuitarStoreJsonProtocol {
@@ -87,7 +88,7 @@ object LowLevelRest extends App with GuitarStoreJsonProtocol {
   println(simpleGuitar.toJson)
 
   // unmarshalling
-  val simpleGuitarJson = "{\"make\":\"Fender\",\"model\":\"Stratocaster\"}"
+  val simpleGuitarJson = "{\"make\":\"Fender\",\"model\":\"Stratocaster\", \"quantity\": 0}"
   println(simpleGuitarJson.parseJson.convertTo[Guitar])
 
   val guitarDB = system.actorOf(Props[GuitarDB], "LowLevelGuitarDB")
@@ -142,10 +143,10 @@ object LowLevelRest extends App with GuitarStoreJsonProtocol {
       id <- idOption
       quantity <- quantityOption
     } yield {
-      val inventoryFuture: Future[AddedInventory] = (guitarDB ? AddInventory(id, quantity)).mapTo[AddedInventory]
+      val inventoryFuture: Future[Option[Guitar]] = (guitarDB ? AddInventory(id, quantity)).mapTo[Option[Guitar]]
       inventoryFuture.map{
-        case AddedInventory(Some(_)) => HttpResponse(StatusCodes.OK)
-        case AddedInventory(None) => HttpResponse(StatusCodes.NotFound)
+        case Some(_) => HttpResponse(StatusCodes.OK)
+        case None => HttpResponse(StatusCodes.NotFound)
 
       }
     }
