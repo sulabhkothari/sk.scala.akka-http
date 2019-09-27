@@ -96,3 +96,92 @@ object JWTAuthorization extends App with SprayJsonSupport {
 
   Http().bindAndHandle(route, "localhost", 8080)
 }
+
+object Problem extends App {
+
+  //val arr = Array(3,3,2,1,3)
+  val arr = Array(9, 7, 11) //10,7,12 | 1,2,3
+
+  val inc = Array(1, 2, 5)
+
+  def cal(arr: Array[Int], incs: Array[Int], depth: Int, exclude: Int): Int = {
+    if (depth > 6) return -1
+    var moreIterationRequired = true
+    val allDepths: Array[Int] = for {
+      x <- inc
+      y <- (0 to arr.length - 1).filter(_ != exclude)
+      if (moreIterationRequired)
+    } yield {
+      val rArr = arr.zipWithIndex.map {
+        case (a, i) =>
+          //println(s"$i,$a")
+          if (i == y) a else a + x
+      }
+      println(rArr.mkString("[", ",", "]"))
+      //println(rArr.distinct.length)
+      //scala.io.StdIn.readLine
+      if (rArr.distinct.length != 1) cal(rArr, incs, depth + 1, y) else {
+        moreIterationRequired = false
+        depth
+      }
+
+    }
+
+    val filteredDepths = allDepths.filter(_ > -1)
+    if (filteredDepths.length < 1) -1 else filteredDepths.min
+    //println(s"$x,$y")
+  }
+
+  println(cal(arr, inc, 1, -1))
+
+}
+
+object Problem2 extends App {
+  import scala.collection.mutable
+
+  val map = mutable.Map[Int, Int]()
+  map(1) = 1
+  map(2) = 1
+  map(5) = 1
+  //val arr = Array(1,5,5,10,10)
+//  1 5 5 10 10
+//  1 6 6 11 11
+//  6 6 11 16 16
+//  11 11 16 16 21
+//  16 16 16 21 26
+//  21 21 21 21 31
+//  31 31 31 31 31
+  val arr = Array(1,2,3,4,5,6,7,8,9,10)
+
+  def findStepsRequired(num: Int): Int = {
+    println(num)
+    if(num == 0) return 0
+    if (map.contains(num)) return map(num)
+    val allSteps = for (i <- 1 to num / 2) yield (findStepsRequired(i) + findStepsRequired(num - i))
+    val min = allSteps.min
+    map(num) = min
+    min
+  }
+
+  var min = arr.min
+  var flag = false
+  //val mod5sum = arr.filter(x => (x - min)%5==0).map(x => (x - min)/5).sum
+  val mod51sum = arr.filter(x => Math.abs(5 - (x - min) % 5) == 1).map(x => (x + 1)/5).sum + 1
+  val min1added = min + 1
+  val sum = arr.filter(x => Math.abs(5 - (x - min) % 5) != 1).map(_ + 1).map(x => findStepsRequired(x - min)).sum
+  //sum.foreach(println)
+  println(mod51sum + sum)
+//  val result = arr.map{
+//    x =>
+//      val mod5 =
+//      if(mod5 == 1 || mod5 == 2) {
+//
+//        flag = true
+//      }
+//
+//      findStepsRequired(x - min)
+//  }.sum
+  println(map)
+  //println(s"Result: $result")
+
+}
